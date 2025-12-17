@@ -64,13 +64,16 @@ struct IntegrationTests {
             Task { await client.disconnect() }
         }
 
-        // 5. Load model via management command
+        // 5. Load model via management command (format matches orchard-py)
         let loadResponse = try await client.sendManagementCommand([
-            "command": "load_model",
-            "model_id": Self.testModelId,
+            "type": "load_model",
+            "requested_id": Self.testModelId,
+            "canonical_id": Self.testModelId,
+            "model_path": Self.testModelId,
+            "wait_for_completion": true,
         ])
         let status = loadResponse["status"] as? String
-        #expect(status == "ok" || status == "already_loaded", "Model should load successfully")
+        #expect(status == "ok" || status == "accepted" || status == "already_loaded", "Model should load successfully")
 
         // 6. Send generation request
         let requestId = await client.nextRequestId()
