@@ -16,8 +16,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "nng",
-            url: "https://github.com/TheProxyCompany/nng/releases/download/v2.0.0-swift.1/nng.xcframework.zip",
-            checksum: "73e7f43b78eb6a6cb7582bb2c4f36ddaaed427e16a67afaa9ce8b788410c7c74"
+            url: "https://github.com/TheProxyCompany/nng/releases/download/1.0.0/nng.xcframework.zip",
+            checksum: "f53b5b0c9f864c755a2b64b982b31ccadfb8a7fefbc2086e71b8e02474227051"
         ),
         .target(
             name: "Orchard",
