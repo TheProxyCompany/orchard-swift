@@ -6,8 +6,8 @@ import Testing
 /// These tests spawn PIE, communicate via IPC, and verify end-to-end functionality.
 @Suite(.serialized)
 struct IntegrationTests {
-    /// Test model for integration tests - small and fast to load
-    static let testModelId = "Qwen/Qwen2.5-0.5B-Instruct"
+    /// Test model - same as orchard-py tests
+    static let testModelId = "meta-llama/Llama-3.1-8B-Instruct"
 
     @Test(.timeLimit(.minutes(3)))
     func testPIEConnection() async throws {
@@ -78,7 +78,7 @@ struct IntegrationTests {
             requestId: requestId,
             modelId: Self.testModelId,
             modelPath: Self.testModelId,
-            prompt: "<|im_start|>user\nHello!<|im_end|>\n<|im_start|>assistant\n",
+            prompt: "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nHello!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
             maxTokens: 10,
             temperature: 0.0
         )
