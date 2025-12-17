@@ -78,7 +78,7 @@ struct IntegrationTests {
             requestId: requestId,
             modelId: Self.testModelId,
             modelPath: Self.testModelId,
-            prompt: "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nHello!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+            prompt: "Hello!",
             maxTokens: 10,
             temperature: 0.0
         )
