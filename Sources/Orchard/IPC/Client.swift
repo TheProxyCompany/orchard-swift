@@ -1,4 +1,14 @@
 import Foundation
+import nng
+
+/// Initialize NNG library once
+private let nngInitialized: Bool = {
+    let rv = nng_init(nil)
+    if rv != NNG_OK {
+        fatalError("Failed to initialize NNG: \(rv)")
+    }
+    return true
+}()
 
 /// Response delta from PIE
 public struct ResponseDelta: Sendable {
@@ -45,23 +55,27 @@ public actor IPCClient {
 
     /// Connect to PIE IPC endpoints
     public func connect() throws {
+        // Ensure NNG is initialized
+        _ = nngInitialized
+
         // Generate unique channel ID for this client
         responseChannelId = UInt64.random(in: 1...UInt64.max)
 
-        // Initialize sockets
+        // Match orchard-py order: create -> dial each socket immediately
+        // 1. Push socket (requests)
         requestSocket = try PushSocket()
-        responseSocket = try SubSocket()
-        managementSocket = try ReqSocket()
-
-        // Connect to endpoints
         try requestSocket?.dial(IPCEndpoints.requestURL)
-        try responseSocket?.dial(IPCEndpoints.responseURL)
-        try managementSocket?.dial(IPCEndpoints.managementURL)
 
-        // Subscribe to our response channel and global events
+        // 2. Sub socket (responses) - subscribe BEFORE dial like orchard-py
+        responseSocket = try SubSocket()
         let responseTopic = "resp:\(String(responseChannelId, radix: 16)):"
         try responseSocket?.subscribe(responseTopic)
         try responseSocket?.subscribe(IPCEndpoints.eventTopicPrefix)
+        try responseSocket?.dial(IPCEndpoints.responseURL)
+
+        // 3. Req socket (management)
+        managementSocket = try ReqSocket()
+        try managementSocket?.dial(IPCEndpoints.managementURL)
 
         // Start response listener
         listenerTask = Task { [weak self] in
