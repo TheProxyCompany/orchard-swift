@@ -13,13 +13,15 @@ let package = Package(
             targets: ["Orchard"]
         ),
     ],
-    dependencies: [
-        // NNG Swift bindings - we'll vendor the C library
-    ],
     targets: [
+        .binaryTarget(
+            name: "nng",
+            url: "https://github.com/TheProxyCompany/nng/releases/download/v2.0.0-swift.1/nng.xcframework.zip",
+            checksum: "73e7f43b78eb6a6cb7582bb2c4f36ddaaed427e16a67afaa9ce8b788410c7c74"
+        ),
         .target(
             name: "Orchard",
-            dependencies: [],
+            dependencies: ["nng"],
             path: "Sources/Orchard"
         ),
         .testTarget(
