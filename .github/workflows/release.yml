@@ -5,19 +5,22 @@ on:
     tags:
       - "[0-9]*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: [self-hosted, terminal-0]
     timeout-minutes: 30
+    env:
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.0"
+          token: ${{ secrets.GH_PAT }}
 
       - name: Build
         run: swift build -c release
@@ -30,4 +33,4 @@ jobs:
         with:
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
