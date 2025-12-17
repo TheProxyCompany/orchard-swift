@@ -29,11 +29,11 @@ public struct ResponseDelta: Sendable {
     }
 }
 
-/// IPC client for communicating with PIE
+/// High-performance IPC client for communicating with PIE
 ///
-/// Actor-based client that manages NNG sockets and handles request/response routing.
-/// Uses Swift's actor isolation for thread safety.
-public actor IPCClient {
+/// Uses a lock-based design instead of actors to minimize overhead in the hot path.
+/// All socket operations are thread-safe via internal locks.
+public final class IPCClient: @unchecked Sendable {
     private var requestSocket: PushSocket?
     private var responseSocket: SubSocket?
     private var managementSocket: ReqSocket?
@@ -41,16 +41,20 @@ public actor IPCClient {
     private var responseChannelId: UInt64 = 0
     private var requestIdCounter: UInt64 = 0
 
+    /// Lock for protecting shared state
+    private let lock = NSLock()
+
+    /// Active request continuations - protected by lock
     private var activeRequests: [UInt64: AsyncStream<ResponseDelta>.Continuation] = [:]
-    private var listenerTask: Task<Void, Never>?
+
+    /// Listener thread
+    private var listenerThread: Thread?
+    private var shouldStopListener = false
 
     public init() {}
 
     deinit {
-        listenerTask?.cancel()
-        requestSocket?.close()
-        responseSocket?.close()
-        managementSocket?.close()
+        disconnect()
     }
 
     /// Connect to PIE IPC endpoints
@@ -61,7 +65,7 @@ public actor IPCClient {
         // Generate unique channel ID for this client
         responseChannelId = UInt64.random(in: 1...UInt64.max)
 
-        // Match orchard-py order: create -> dial each socket immediately
+        // Create and connect all sockets
         // 1. Push socket (requests)
         requestSocket = try PushSocket()
         try requestSocket?.dial(IPCEndpoints.requestURL)
@@ -77,34 +81,51 @@ public actor IPCClient {
         managementSocket = try ReqSocket()
         try managementSocket?.dial(IPCEndpoints.managementURL)
 
-        // Start response listener
-        listenerTask = Task { [weak self] in
-            await self?.runResponseListener()
+        // Start listener on a dedicated thread - minimal overhead
+        shouldStopListener = false
+        let thread = Thread { [weak self] in
+            self?.runResponseListener()
         }
+        thread.name = "orchard-ipc-listener"
+        thread.qualityOfService = .userInteractive
+        listenerThread = thread
+        thread.start()
     }
 
     /// Disconnect from PIE
     public func disconnect() {
-        listenerTask?.cancel()
-        listenerTask = nil
+        // Signal listener to stop
+        lock.lock()
+        shouldStopListener = true
+        lock.unlock()
 
+        // Wait for listener thread to finish
+        while listenerThread?.isFinished == false {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        listenerThread = nil
+
+        // Close sockets
         requestSocket?.close()
         responseSocket?.close()
         managementSocket?.close()
-
         requestSocket = nil
         responseSocket = nil
         managementSocket = nil
 
         // Fail all active requests
+        lock.lock()
         for (_, continuation) in activeRequests {
             continuation.finish()
         }
         activeRequests.removeAll()
+        lock.unlock()
     }
 
-    /// Get the next request ID
+    /// Get the next request ID - lock-free atomic would be better but this is fine
     public func nextRequestId() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
         requestIdCounter += 1
         if requestIdCounter >= UInt64.max {
             requestIdCounter = 1
@@ -147,28 +168,30 @@ public actor IPCClient {
             prompts: [promptPayload]
         )
 
-        // Create response stream and register it
+        // Create response stream
         var streamContinuation: AsyncStream<ResponseDelta>.Continuation!
         let stream = AsyncStream<ResponseDelta> { continuation in
             streamContinuation = continuation
         }
+
+        // Register the continuation - minimal lock scope
+        lock.lock()
         activeRequests[requestId] = streamContinuation
+        lock.unlock()
 
         streamContinuation.onTermination = { [weak self] _ in
-            Task { [weak self] in
-                await self?.unregisterRequest(requestId: requestId)
-            }
+            self?.unregisterRequest(requestId: requestId)
         }
 
-        // Send request
+        // Send request - socket is internally thread-safe
         try socket.send(payload)
 
         return stream
     }
 
     /// Send a management command (e.g., load_model)
-    /// Returns the JSON response as a dictionary, transferred out of the actor via `sending`
-    public func sendManagementCommand(_ command: [String: Any], timeout: TimeInterval = 30.0) throws -> sending [String: Any] {
+    /// This is synchronous and blocking - appropriate for setup operations
+    public func sendManagementCommand(_ command: [String: Any], timeout: TimeInterval = 30.0) throws -> [String: Any] {
         guard let socket = managementSocket else {
             throw IPCError.notConnected
         }
@@ -186,40 +209,57 @@ public actor IPCClient {
     // MARK: - Private
 
     private func unregisterRequest(requestId: UInt64) {
+        lock.lock()
         activeRequests.removeValue(forKey: requestId)
+        lock.unlock()
     }
 
-    private func runResponseListener() async {
+    /// Response listener - runs on dedicated thread for minimal latency
+    private func runResponseListener() {
         guard let socket = responseSocket else { return }
 
         let responseTopic = "resp:\(String(responseChannelId, radix: 16)):".data(using: .utf8)!
 
-        while !Task.isCancelled {
+        while true {
+            // Check stop flag
+            lock.lock()
+            let shouldStop = shouldStopListener
+            lock.unlock()
+            if shouldStop { break }
+
             do {
-                let data = try socket.receive(timeout: 1.0)
+                let data = try socket.receive(timeout: 0.1)
 
                 // Check if it's a response for us
                 if data.starts(with: responseTopic) {
                     let jsonData = data.dropFirst(responseTopic.count)
-                    if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                    if let json = try JSONSerialization.jsonObject(with: Data(jsonData)) as? [String: Any] {
                         let delta = ResponseDelta(from: json)
 
-                        if let continuation = activeRequests[delta.requestId] {
+                        // Route to the appropriate continuation - minimal lock scope
+                        lock.lock()
+                        let continuation = activeRequests[delta.requestId]
+                        lock.unlock()
+
+                        if let continuation = continuation {
                             continuation.yield(delta)
 
                             if delta.isFinalDelta {
                                 continuation.finish()
+                                lock.lock()
                                 activeRequests.removeValue(forKey: delta.requestId)
+                                lock.unlock()
                             }
                         }
                     }
                 }
-                // Could also handle event topic here
             } catch SocketError.timeout {
-                // Normal - just continue polling
                 continue
             } catch {
-                // Log and continue
+                lock.lock()
+                let shouldStop = shouldStopListener
+                lock.unlock()
+                if shouldStop { break }
                 continue
             }
         }
