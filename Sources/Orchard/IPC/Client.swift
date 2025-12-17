@@ -9,7 +9,9 @@ public struct ResponseDelta: Sendable {
     public let error: String?
 
     public init(from json: [String: Any]) {
-        self.requestId = (json["request_id"] as? UInt64) ?? 0
+        self.requestId = (json["request_id"] as? UInt64)
+            ?? (json["request_id"] as? Int).map { UInt64($0) }
+            ?? 0
         self.content = json["content"] as? String
         self.isFinalDelta = (json["is_final_delta"] as? Bool) ?? false
         self.finishReason = json["finish_reason"] as? String
@@ -18,6 +20,9 @@ public struct ResponseDelta: Sendable {
 }
 
 /// IPC client for communicating with PIE
+///
+/// Actor-based client that manages NNG sockets and handles request/response routing.
+/// Uses Swift's actor isolation for thread safety.
 public actor IPCClient {
     private var requestSocket: PushSocket?
     private var responseSocket: SubSocket?
@@ -31,8 +36,15 @@ public actor IPCClient {
 
     public init() {}
 
+    deinit {
+        listenerTask?.cancel()
+        requestSocket?.close()
+        responseSocket?.close()
+        managementSocket?.close()
+    }
+
     /// Connect to PIE IPC endpoints
-    public func connect() async throws {
+    public func connect() throws {
         // Generate unique channel ID for this client
         responseChannelId = UInt64.random(in: 1...UInt64.max)
 
@@ -141,7 +153,8 @@ public actor IPCClient {
     }
 
     /// Send a management command (e.g., load_model)
-    public func sendManagementCommand(_ command: [String: Any], timeout: TimeInterval = 30.0) throws -> [String: Any] {
+    /// Returns the JSON response as a dictionary, transferred out of the actor via `sending`
+    public func sendManagementCommand(_ command: [String: Any], timeout: TimeInterval = 30.0) throws -> sending [String: Any] {
         guard let socket = managementSocket else {
             throw IPCError.notConnected
         }
