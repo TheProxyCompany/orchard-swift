@@ -22,7 +22,7 @@ public enum IPCEndpoints {
             base = home.appendingPathComponent(".cache")
         }
 
-        let path = base.appendingPathComponent("com.proxycompany.pie/ipc")
+        let path = base.appendingPathComponent("com.theproxycompany/ipc")
 
         // Ensure directory exists
         try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
