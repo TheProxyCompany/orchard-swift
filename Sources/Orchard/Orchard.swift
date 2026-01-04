@@ -1,33 +1,21 @@
 import Foundation
 
-/// Orchard Swift - Swift client library for the Orchard inference platform.
+/// Orchard Swift - Telemetry client for PIE (Proxy Inference Engine).
 ///
-/// Provides PIE binary management, NNG IPC communication, and high-level inference APIs.
+/// This minimal library provides telemetry subscription for SwiftUI apps.
+/// For full inference capabilities, use orchard-rs via Grand Central.
 ///
 /// ## Quick Start
 ///
 /// ```swift
-/// // Start the inference engine and load a model
-/// let engine = try await InferenceEngine(loadModels: ["meta-llama/Llama-3.1-8B-Instruct"])
+/// let telemetry = try OrchardTelemetry()
 ///
-/// // Get a client and make a request
-/// let client = try engine.client()
-/// let response = try await client.achat(
-///     modelId: "meta-llama/Llama-3.1-8B-Instruct",
-///     messages: [["role": "user", "content": "Hello!"]]
-/// )
-/// print(response.text)
-///
-/// // Clean up
-/// engine.close()
+/// for await snapshot in telemetry.snapshots {
+///     print("Tokens/sec: \(snapshot.models.first?.tokensPerSecond ?? 0)")
+///     print("Energy: \(snapshot.health.systemWattage)W")
+/// }
 /// ```
 public enum Orchard {
     /// Library version
-    public static let version = "0.2.0"
-
-    /// Shared engine fetcher instance
-    public static let fetcher = EngineFetcher()
-
-    /// Global context for the inference engine
-    public static var globalContext: GlobalContext { GlobalContext.shared }
+    public static let version = "2026.1.0"
 }

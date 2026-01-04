@@ -1,21 +1,15 @@
 # Orchard Swift
 
-Swift client library for the Orchard inference platform.
+Telemetry client for PIE (Proxy Inference Engine).
 
-## Overview
-
-Orchard Swift provides:
-- PIE (Proxy Inference Engine) binary management
-- NNG IPC communication with PIE
-- Swift-native async/await API for inference
+A minimal Swift library for subscribing to real-time engine telemetry. Designed for SwiftUI HUD integration. For inference requests, use Grand Central with orchard-rs.
 
 ## Installation
 
-Add to your `Package.swift`:
-
 ```swift
+// Package.swift
 dependencies: [
-    .package(url: "https://github.com/TheProxyCompany/orchard-swift", from: "0.1.0")
+    .package(url: "https://github.com/TheProxyCompany/orchard-swift.git", from: "2026.1.0")
 ]
 ```
 
@@ -24,19 +18,65 @@ dependencies: [
 ```swift
 import Orchard
 
-let engine = try await InferenceEngine()
-let client = engine.client(model: "your-model-id")
+let telemetry = try OrchardTelemetry()
 
-for try await token in client.generate(prompt: "Hello, world!") {
-    print(token, terminator: "")
+for await snapshot in telemetry.snapshots {
+    let tokensPerSecond = snapshot.totalTokensPerSecond
+    let gpuUtilization = snapshot.memory.gpuUtilization  // 0.0 - 1.0
+    let powerWatts = snapshot.health.systemWattage
 }
 ```
 
-## Model Profiles
+### SwiftUI Integration
 
-Chat templates and control tokens are loaded from the [orchard-models](https://github.com/TheProxyCompany/orchard-models) submodule at `Resources/profiles/`. This provides a single source of truth shared across all Orchard SDKs (Python, Rust, Swift).
+```swift
+struct EngineHUD: View {
+    @State private var snapshot: TelemetrySnapshot?
+
+    var body: some View {
+        HStack {
+            Text("\(snapshot?.totalTokensPerSecond ?? 0, specifier: "%.1f") tok/s")
+            Text("\(Int((snapshot?.memory.gpuUtilization ?? 0) * 100))% GPU")
+            Text("\(snapshot?.health.systemWattage ?? 0, specifier: "%.1f")W")
+        }
+        .task {
+            guard let telemetry = try? OrchardTelemetry() else { return }
+            for await s in telemetry.snapshots {
+                snapshot = s
+            }
+        }
+    }
+}
+```
+
+## Available Telemetry
+
+| Category | Fields |
+|----------|--------|
+| **Performance** | `tokensPerSecond`, `avgStepLatencyMs` |
+| **Memory** | `gpuTotalBytes`, `gpuReservedBytes`, `kvCachePagesUsed` |
+| **Power** | `systemWattage`, `systemTemperature`, `cpuUsagePercent` |
+| **Engine** | `activeRequests`, `activeRuntimes`, `uptimeNs` |
+
+## Scope
+
+**This library provides:**
+- NNG SUB socket subscription to PIE telemetry events
+- Codable types for telemetry snapshots
+- AsyncStream for SwiftUI integration
+
+**This library does NOT provide:**
+- Inference requests
+- Model management
+- Engine lifecycle control
+
+For full inference capabilities, use orchard-rs via Grand Central.
 
 ## Requirements
 
 - macOS 14.0+
 - Swift 6.0+
+
+## License
+
+Apache 2.0
