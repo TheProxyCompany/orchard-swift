@@ -117,9 +117,8 @@ public final class ChatFormatter: @unchecked Sendable {
 // MARK: - Profile Directory
 
 /// Get the profile directory for a model type
-/// Profiles are bundled with the package or looked up from a known location
+/// Profiles are bundled with the package via the orchard-models submodule
 func getProfileDirectory(for modelType: String) -> URL {
-    // Look in the orchard-py profiles directory (for development)
     let currentFile = URL(fileURLWithPath: #file)
     let packageRoot = currentFile
         .deletingLastPathComponent() // Formatter
@@ -127,17 +126,16 @@ func getProfileDirectory(for modelType: String) -> URL {
         .deletingLastPathComponent() // Sources
         .deletingLastPathComponent() // orchard-swift
 
-    // Try orchard-py profiles
-    let orchardPyProfiles = packageRoot
-        .deletingLastPathComponent() // TheProxyCompany
-        .appendingPathComponent("orchard-py/orchard/formatter/profiles")
+    // Bundled profiles submodule (primary)
+    let bundledProfiles = packageRoot
+        .appendingPathComponent("Resources/profiles")
         .appendingPathComponent(modelType)
 
-    if FileManager.default.fileExists(atPath: orchardPyProfiles.path) {
-        return orchardPyProfiles
+    if FileManager.default.fileExists(atPath: bundledProfiles.path) {
+        return bundledProfiles
     }
 
-    // Final fallback
+    // Fallback for installed location
     return URL(fileURLWithPath: "/usr/local/share/orchard/profiles/\(modelType)")
 }
 
