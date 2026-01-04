@@ -32,6 +32,10 @@ for try await token in client.generate(prompt: "Hello, world!") {
 }
 ```
 
+## Model Profiles
+
+Chat templates and control tokens are loaded from the [orchard-models](https://github.com/TheProxyCompany/orchard-models) submodule at `Resources/profiles/`. This provides a single source of truth shared across all Orchard SDKs (Python, Rust, Swift).
+
 ## Requirements
 
 - macOS 14.0+
