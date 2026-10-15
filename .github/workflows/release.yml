@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: [self-hosted, terminal-0]
+    runs-on: [self-hosted, ci-cd]
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -22,9 +22,6 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT }}
 
-      - name: Configure git credentials
-        run: |
-          git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
 
       - name: Build
         run: swift build -c release
